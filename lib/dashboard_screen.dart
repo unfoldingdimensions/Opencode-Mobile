@@ -143,7 +143,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         drawer: const _SessionDrawer(),
         body: Column(
           children: [
-            if (connection.phase == ConnectionPhase.error)
+            if (connection.phase == ConnectionPhase.reconnecting)
               _ReconnectBanner(error: connection.error),
             const Expanded(
               child: TabBarView(
@@ -169,7 +169,7 @@ class _ConnectionDot extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = switch (phase) {
       ConnectionPhase.connected => const Color(0xFF43A047),
-      ConnectionPhase.connecting => Colors.amber,
+      ConnectionPhase.connecting || ConnectionPhase.reconnecting => Colors.amber,
       _ => const Color(0xFFE53935),
     };
     return Center(
@@ -177,6 +177,7 @@ class _ConnectionDot extends StatelessWidget {
         message: switch (phase) {
           ConnectionPhase.connected => 'Connected',
           ConnectionPhase.connecting => 'Connecting…',
+          ConnectionPhase.reconnecting => 'Reconnecting…',
           ConnectionPhase.error => 'Connection error',
           ConnectionPhase.disconnected => 'Disconnected',
         },

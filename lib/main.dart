@@ -53,6 +53,9 @@ class HomeGate extends ConsumerWidget {
       ConnectionPhase.disconnected => const ConnectScreen(),
       ConnectionPhase.connecting => _ConnectingSplash(url: connection.baseUrl),
       ConnectionPhase.connected => const DashboardScreen(),
+      // Transient SSE drop: keep the dashboard alive; the reconnect banner
+      // inside it shows the reason. Only hard failures leave the dashboard.
+      ConnectionPhase.reconnecting => const DashboardScreen(),
       ConnectionPhase.error => ConnectScreen(
           initialUrl: connection.baseUrl ?? '',
           initialError: connection.error,

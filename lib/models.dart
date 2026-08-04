@@ -33,6 +33,7 @@ class LogEntry {
     required this.time,
     this.sessionID,
     this.messageID,
+    this.partID,
     this.role,
     this.text = '',
     this.tool,
@@ -50,6 +51,12 @@ class LogEntry {
   /// Owning message id (`msg_…`) — used to group log entries into message
   /// blocks, mirroring the desktop app's chat layout.
   final String? messageID;
+
+  /// Owning part id (`prt_…`) — streaming `message.part.updated` events
+  /// carry the full part on every update, so entries with the same
+  /// `(sessionID, messageID, partID)` are upserted (replaced in place)
+  /// rather than appended, keeping the log coherent while text streams.
+  final String? partID;
 
   /// `user` | `assistant` | `system` — set on message-boundary entries.
   final String? role;

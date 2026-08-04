@@ -170,5 +170,72 @@ void main() {
       expect(ev.entry.kind, LogKind.system);
       expect(ev.entry.text, isEmpty);
     });
+
+    test('streaming text updates carry partID for upsert', () {
+      final ev1 = parseEvent(envelope('message.part.updated', {
+        'sessionID': 'ses_abc',
+        'time': 1700000000000,
+        'part': {
+          'id': 'prt_stream',
+          'sessionID': 'ses_abc',
+          'messageID': 'msg_1',
+          'type': 'text',
+          'text': 'Hello',
+        },
+      }));
+      final ev2 = parseEvent(envelope('message.part.updated', {
+        'sessionID': 'ses_abc',
+        'time': 1700000000001,
+        'part': {
+          'id': 'prt_stream',
+          'sessionID': 'ses_abc',
+          'messageID': 'msg_1',
+          'type': 'text',
+          'text': 'Hello, world',
+        },
+      }));
+
+      expect(ev1.entry.partID, 'prt_stream');
+      expect(ev1.entry.messageID, 'msg_1');
+      expect(ev2.entry.partID, 'prt_stream');
+      expect(ev2.entry.text, 'Hello, world');
+    });
+
+    test('empty text chunk is dropped noise, not a raw event', () {
+      final ev = parseEvent(envelope('message.part.updated', {
+        'sessionID': 'ses_abc',
+        'time': 1700000000000,
+        'part': {
+          'id': 'prt_0',
+          'sessionID': 'ses_abc',
+          'messageID': 'msg_1',
+          'type': 'text',
+          'text': '',
+        },
+      }));
+
+      expect(ev.entry.kind, LogKind.system);
+      expect(ev.entry.text, isEmpty);
+      expect(ev.entry.partID, isNull);
+    });
+
+    test('tool part updates carry partID too', () {
+      final ev = parseEvent(envelope('message.part.updated', {
+        'sessionID': 'ses_abc',
+        'time': 1700000000000,
+        'part': {
+          'id': 'prt_tool',
+          'sessionID': 'ses_abc',
+          'messageID': 'msg_2',
+          'type': 'tool',
+          'callID': 'call_1',
+          'tool': 'bash',
+          'state': {'status': 'running'},
+        },
+      }));
+
+      expect(ev.entry.partID, 'prt_tool');
+      expect(ev.entry.toolCallID, 'call_1');
+    });
   });
 }

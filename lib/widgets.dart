@@ -177,42 +177,15 @@ class MessageGroup extends StatelessWidget {
     ];
   }
 
-  /// Coalesces consecutive text chunks into one bubble and merges repeated
-  /// tool entries for the same call (latest state wins).
+  /// Filters out the "─ role message ─" header markers (the header renders
+  /// them). Text/tool coalescing is gone: the log notifier upserts by
+  /// `partID`, so each part is a single entry and merging would wrongly
+  /// collapse distinct parts.
   List<LogEntry> _mergeEntries(List<LogEntry> entries) {
-    final merged = <LogEntry>[];
-    for (final e in entries) {
-      if (e.kind == LogKind.system && e.role != null && e.text.startsWith('─')) {
-        continue; // message marker — the header renders it.
-      }
-      if (e.kind == LogKind.text) {
-        if (merged.isNotEmpty && merged.last.kind == LogKind.text) {
-          final last = merged.removeLast();
-          merged.add(LogEntry(
-            kind: LogKind.text,
-            time: e.time,
-            sessionID: e.sessionID,
-            messageID: e.messageID,
-            role: e.role,
-            text: '${last.text}\n${e.text}',
-            rawJson: e.rawJson,
-          ));
-          continue;
-        }
-        merged.add(e);
-        continue;
-      }
-      if (e.kind == LogKind.tool &&
-          e.toolCallID != null &&
-          merged.isNotEmpty &&
-          merged.last.kind == LogKind.tool &&
-          merged.last.toolCallID == e.toolCallID) {
-        merged[merged.length - 1] = e;
-        continue;
-      }
-      merged.add(e);
-    }
-    return merged;
+    return [
+      for (final e in entries)
+        if (!(e.kind == LogKind.system && e.role != null && e.text.startsWith('─'))) e,
+    ];
   }
 }
 

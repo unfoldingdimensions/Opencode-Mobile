@@ -242,19 +242,26 @@ ParsedEvent _parsePartUpdated(
   final partType = part['type'];
   final time = _timeOf(props);
   final messageID = part['messageID']?.toString();
-  final common = LogEntry(
-    kind: LogKind.raw,
-    time: time,
-    sessionID: sessionId,
-    messageID: messageID,
-    rawJson: part,
-  );
+  final partID = part['id']?.toString();
 
   switch (partType) {
     case 'text':
       final text = part['text'];
       if (text is! String || text.isEmpty) {
-        return ParsedEvent(type: type, sessionId: sessionId, entry: common);
+        // Streaming start / empty chunk — pure noise. A system entry with
+        // empty text is dropped by the log notifier.
+        return ParsedEvent(
+          type: type,
+          sessionId: sessionId,
+          entry: LogEntry(
+            kind: LogKind.system,
+            time: time,
+            sessionID: sessionId,
+            messageID: messageID,
+            text: '',
+            rawJson: part,
+          ),
+        );
       }
       return ParsedEvent(
         type: type,
@@ -264,6 +271,7 @@ ParsedEvent _parsePartUpdated(
           time: time,
           sessionID: sessionId,
           messageID: messageID,
+          partID: partID,
           text: text,
           rawJson: part,
         ),
@@ -279,6 +287,7 @@ ParsedEvent _parsePartUpdated(
           time: time,
           sessionID: sessionId,
           messageID: messageID,
+          partID: partID,
           text: text is String ? text : _short(part['text'] ?? '', 200),
           rawJson: part,
         ),
@@ -302,6 +311,7 @@ ParsedEvent _parsePartUpdated(
           time: time,
           sessionID: sessionId,
           messageID: messageID,
+          partID: partID,
           text: text,
           tool: tool,
           toolCallID: part['callID']?.toString(),

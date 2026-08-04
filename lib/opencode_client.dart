@@ -36,7 +36,11 @@ class OpenCodeClient {
   bool _stop = false;
 
   static const _connectTimeout = Duration(seconds: 10);
-  static const _idleTimeout = Duration(seconds: 45);
+
+  /// A long agent "thinking" stretch can exceed 45s of stream silence if the
+  /// server does not heartbeat; use a generous idle budget so model
+  /// deliberation doesn't flap the connection into a reconnect cycle.
+  static const _idleTimeout = Duration(minutes: 3);
   static const _maxBackoff = Duration(seconds: 30);
 
   Uri _uri(String path) => baseUri.resolve(path);

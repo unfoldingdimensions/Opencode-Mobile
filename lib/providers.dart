@@ -21,7 +21,7 @@ const _kBaseUrlPrefsKey = 'baseUrl';
 
 // ------------------------------------------------------------- connection
 
-enum ConnectionPhase { disconnected, connecting, connected, error }
+enum ConnectionPhase { disconnected, connecting, connected, reconnecting, error }
 
 class ConnectionState {
   const ConnectionState({
@@ -38,11 +38,19 @@ class ConnectionState {
 
   bool get isConnected => phase == ConnectionPhase.connected;
 
-  ConnectionState copyWith({ConnectionPhase? phase, String? error, OpenCodeClient? client}) =>
+  static const _unset = Object();
+
+  /// `error` is clearable via `copyWith(error: null)` (the sentinel
+  /// distinguishes "not passed" from "explicitly cleared").
+  ConnectionState copyWith({
+    ConnectionPhase? phase,
+    Object? error = _unset,
+    OpenCodeClient? client,
+  }) =>
       ConnectionState(
         phase: phase ?? this.phase,
         baseUrl: baseUrl,
-        error: error ?? this.error,
+        error: identical(error, _unset) ? this.error : error as String?,
         client: client ?? this.client,
       );
 }
@@ -68,6 +76,10 @@ final baseUrlProvider = NotifierProvider<BaseUrlNotifier, String>(BaseUrlNotifie
 class ConnectionController extends Notifier<ConnectionState> {
   OpenCodeClient? _client;
   StreamSubscription<Map<String, dynamic>>? _sub;
+
+  /// Bumped on every replay and on teardown so a stale in-flight replay
+  /// (from a previous session selection) can never clobber the log.
+  int _replayGen = 0;
 
   @override
   ConnectionState build() {
@@ -136,6 +148,8 @@ class ConnectionController extends Notifier<ConnectionState> {
   }
 
   void _teardown() {
+    // Invalidate any in-flight replay so it cannot apply after teardown.
+    _replayGen++;
     _sub?.cancel();
     _sub = null;
     _client?.dispose();
@@ -146,12 +160,17 @@ class ConnectionController extends Notifier<ConnectionState> {
     final type = raw['type'];
     switch (type) {
       case 'stream.connected':
-        state = state.copyWith(phase: ConnectionPhase.connected);
+        state = state.copyWith(phase: ConnectionPhase.connected, error: null);
         ref.invalidate(sessionListProvider);
+        // The server may have restarted while we were away — re-validate
+        // the selection so we never dangle on a dead session id.
+        _selectNewest();
         return;
       case 'stream.reconnecting':
+        // Transient: stay on the dashboard (HomeGate only leaves for hard
+        // errors) — the reconnect banner shows the reason instead.
         state = state.copyWith(
-          phase: ConnectionPhase.error,
+          phase: ConnectionPhase.reconnecting,
           error: 'Connection lost — reconnecting (${raw['error'] ?? '…'})',
         );
         return;
@@ -219,10 +238,8 @@ class ConnectionController extends Notifier<ConnectionState> {
       final sessions = raw.map(_sessionFromRaw).toList()
         ..sort((a, b) => b.timeCreated.compareTo(a.timeCreated));
       final current = ref.read(selectedSessionIdProvider);
-      final target = sessions.any((s) => s.id == current)
-          ? current
-          : sessions.first.id;
-      if (target != current) {
+      final target = resolveSessionTarget(sessions, current);
+      if (target != null && target != current) {
         ref.read(selectedSessionIdProvider.notifier).select(target);
       }
     } catch (_) {
@@ -230,23 +247,39 @@ class ConnectionController extends Notifier<ConnectionState> {
     }
   }
 
+  /// Which session to select after a (re)connect: keep [current] when it
+  /// still exists, otherwise fall back to the newest (the list must already
+  /// be sorted newest-first). Null when there is nothing to select.
+  static String? resolveSessionTarget(List<SessionSummary> sessions, String? current) {
+    if (sessions.isEmpty) return null;
+    return sessions.any((s) => s.id == current) ? current : sessions.first.id;
+  }
+
   Future<void> _replay(String sessionId) async {
+    final gen = ++_replayGen;
     final client = _client;
     if (client == null) return;
     try {
       final messages = await client.sessionHistory(sessionId);
+      if (gen != _replayGen || !ref.mounted) return;
+      // The API does not guarantee order; sort chronologically so the log
+      // reads top-to-bottom as the conversation happened.
+      messages.sort((a, b) => messageTimeMs(a).compareTo(messageTimeMs(b)));
       final entries = <LogEntry>[];
+      ModelRef? lastModel;
       for (final message in messages) {
-        entries.addAll(_entriesFromMessage(message));
-        final model = modelFromMessage(message);
-        if (model != null) {
-          ref.read(composerModelProvider.notifier).set(model);
-        }
+        entries.addAll(entriesFromMessage(message));
+        lastModel = modelFromMessage(message) ?? lastModel;
+      }
+      if (gen != _replayGen || !ref.mounted) return;
+      if (lastModel != null) {
+        ref.read(composerModelProvider.notifier).set(lastModel);
       }
       if (entries.isNotEmpty) {
         ref.read(logEntriesProvider.notifier).replaceAll(entries);
       }
     } catch (e) {
+      if (gen != _replayGen || !ref.mounted) return;
       ref.read(logEntriesProvider.notifier).append(LogEntry(
         kind: LogKind.error,
         time: DateTime.now(),
@@ -256,15 +289,29 @@ class ConnectionController extends Notifier<ConnectionState> {
     }
   }
 
-  List<LogEntry> _entriesFromMessage(Map<String, dynamic> message) {
+  /// Milliseconds since epoch of a message's creation; 0 when unknown.
+  /// Public (pure function) so history conversion can be unit-tested.
+  static int messageTimeMs(Map<String, dynamic> message) {
+    final time = message['time'];
+    if (time is Map<String, dynamic>) {
+      final created = time['created'];
+      if (created is num) return created.toInt();
+    }
+    return 0;
+  }
+
+  static List<LogEntry> entriesFromMessage(Map<String, dynamic> message) {
     final sessionID = message['sessionID'] as String?;
     final messageID = message['id']?.toString();
     final role = message['role']?.toString() ?? 'message';
+    final ms = messageTimeMs(message);
+    final msgTime =
+        ms > 0 ? DateTime.fromMillisecondsSinceEpoch(ms) : DateTime.now();
     final out = <LogEntry>[];
     if (message['error'] != null) {
       out.add(LogEntry(
         kind: LogKind.error,
-        time: DateTime.now(),
+        time: msgTime,
         sessionID: sessionID,
         messageID: messageID,
         role: role,
@@ -275,7 +322,7 @@ class ConnectionController extends Notifier<ConnectionState> {
     }
     out.add(LogEntry(
       kind: LogKind.system,
-      time: DateTime.now(),
+      time: msgTime,
       sessionID: sessionID,
       messageID: messageID,
       role: role,
@@ -287,12 +334,14 @@ class ConnectionController extends Notifier<ConnectionState> {
       for (final p in parts.whereType<Map<String, dynamic>>()) {
         final partType = p['type'];
         final partMessageID = p['messageID']?.toString() ?? messageID;
+        final partID = p['id']?.toString() ?? p['partID']?.toString();
         if (partType == 'text' && p['text'] is String) {
           out.add(LogEntry(
             kind: LogKind.text,
-            time: DateTime.now(),
+            time: msgTime,
             sessionID: sessionID,
             messageID: partMessageID,
+            partID: partID,
             role: role,
             text: p['text'] as String,
             rawJson: p,
@@ -300,9 +349,10 @@ class ConnectionController extends Notifier<ConnectionState> {
         } else if (partType == 'reasoning' && p['text'] is String) {
           out.add(LogEntry(
             kind: LogKind.reasoning,
-            time: DateTime.now(),
+            time: msgTime,
             sessionID: sessionID,
             messageID: partMessageID,
+            partID: partID,
             role: role,
             text: p['text'] as String,
             rawJson: p,
@@ -314,9 +364,10 @@ class ConnectionController extends Notifier<ConnectionState> {
           final title = stateMap['title']?.toString();
           out.add(LogEntry(
             kind: LogKind.tool,
-            time: DateTime.now(),
+            time: msgTime,
             sessionID: sessionID,
             messageID: partMessageID,
+            partID: partID,
             role: role,
             text: 'tool: ${p['tool'] ?? '?'} ($status)${title == null || title.isEmpty ? '' : ' — $title'}',
             tool: p['tool']?.toString(),
@@ -333,7 +384,7 @@ class ConnectionController extends Notifier<ConnectionState> {
         } else {
           out.add(LogEntry(
             kind: LogKind.system,
-            time: DateTime.now(),
+            time: msgTime,
             sessionID: sessionID,
             messageID: partMessageID,
             role: role,
@@ -481,11 +532,32 @@ class LogEntriesNotifier extends Notifier<List<LogEntry>> {
   /// Appends entries for the selected session; system-wide entries (no
   /// sessionID) always pass through. Empty system entries (lifecycle noise)
   /// are dropped.
+  ///
+  /// Entries carrying a `partID` are **upserted**: a newer update for the
+  /// same `(sessionID, messageID, partID)` replaces the existing entry in
+  /// place (keeping its position), because OpenCode streams the full part on
+  /// every `message.part.updated`. Without this, streaming text would pile
+  /// up as duplicated concatenations.
   void append(LogEntry entry) {
     if (entry.kind == LogKind.system && entry.text.isEmpty) return;
     final selected = ref.read(selectedSessionIdProvider);
     if (entry.sessionID != null && entry.sessionID != selected) return;
-    final next = [...state, entry];
+    final next = [...state];
+    if (entry.partID != null &&
+        entry.sessionID != null &&
+        entry.messageID != null) {
+      final existing = next.indexWhere((e) =>
+          e.partID != null &&
+          e.partID == entry.partID &&
+          e.sessionID == entry.sessionID &&
+          e.messageID == entry.messageID);
+      if (existing >= 0) {
+        next[existing] = entry;
+        state = next;
+        return;
+      }
+    }
+    next.add(entry);
     state = next.length > _maxEntries ? next.sublist(next.length - _maxEntries) : next;
   }
 
