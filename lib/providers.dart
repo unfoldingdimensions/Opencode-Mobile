@@ -81,15 +81,16 @@ class ConnectionController extends Notifier<ConnectionState> {
   }
 
   /// Health check only — used by the connect screen's "Test Connection".
-  Future<bool> testConnection(String url) async {
+  /// Returns the health payload (e.g. `{version: …}`) or `null` if the
+  /// server is unreachable or the URL is invalid.
+  Future<Map<String, dynamic>?> testConnection(String url) async {
     final base = Uri.tryParse(url);
-    if (base == null || !base.hasScheme) return false;
+    if (base == null || !base.hasScheme) return null;
     final probe = OpenCodeClient(base);
     try {
-      await probe.health();
-      return true;
+      return await probe.health();
     } catch (_) {
-      return false;
+      return null;
     } finally {
       probe.dispose();
     }

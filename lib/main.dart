@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'connect_screen.dart';
 import 'providers.dart';
 import 'theme.dart';
 
@@ -28,13 +29,38 @@ class OpenCodeMirrorApp extends StatelessWidget {
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
       themeMode: ThemeMode.system,
-      home: const PlaceholderScreen(),
+      home: const HomeGate(),
     );
   }
 }
 
-class PlaceholderScreen extends StatelessWidget {
-  const PlaceholderScreen({super.key});
+/// Routes by connection phase:
+/// - disconnected → connect screen
+/// - connecting (auto-connect from saved URL) → splash
+/// - connected → dashboard
+/// - error → connect screen with the failure prefilled
+class HomeGate extends ConsumerWidget {
+  const HomeGate({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final connection = ref.watch(connectionProvider);
+    return switch (connection.phase) {
+      ConnectionPhase.disconnected => const ConnectScreen(),
+      ConnectionPhase.connecting => _ConnectingSplash(url: connection.baseUrl),
+      ConnectionPhase.connected => const _DashboardPlaceholder(),
+      ConnectionPhase.error => ConnectScreen(
+          initialUrl: connection.baseUrl ?? '',
+          initialError: connection.error,
+        ),
+    };
+  }
+}
+
+class _ConnectingSplash extends StatelessWidget {
+  const _ConnectingSplash({this.url});
+
+  final String? url;
 
   @override
   Widget build(BuildContext context) {
@@ -45,12 +71,41 @@ class PlaceholderScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.terminal, size: 64, color: scheme.primary),
+            const CircularProgressIndicator(),
+            const SizedBox(height: 24),
+            Text('Connecting…', style: textTheme.titleMedium),
+            if (url != null && url!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                url!,
+                style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DashboardPlaceholder extends StatelessWidget {
+  const _DashboardPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.dashboard_outlined, size: 64, color: scheme.primary),
             const SizedBox(height: 16),
-            Text('OpenCode Mirror', style: textTheme.headlineMedium),
+            Text('Connected', style: textTheme.headlineMedium),
             const SizedBox(height: 8),
             Text(
-              'Phase 2 — state layer ready',
+              'Dashboard lands in Phase 4',
               style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
