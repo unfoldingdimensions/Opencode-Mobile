@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'providers.dart';
 import 'theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   GoogleFonts.config.allowRuntimeFetching = true;
-  runApp(const OpenCodeMirrorApp());
+  final prefs = await SharedPreferences.getInstance();
+  final savedUrl = prefs.getString('baseUrl') ?? '';
+  runApp(ProviderScope(
+    overrides: [baseUrlProvider.overrideWith(() => BaseUrlNotifier(savedUrl))],
+    child: const OpenCodeMirrorApp(),
+  ));
 }
 
 class OpenCodeMirrorApp extends StatelessWidget {
@@ -42,7 +50,7 @@ class PlaceholderScreen extends StatelessWidget {
             Text('OpenCode Mirror', style: textTheme.headlineMedium),
             const SizedBox(height: 8),
             Text(
-              'Phase 0 — foundation ready',
+              'Phase 2 — state layer ready',
               style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],

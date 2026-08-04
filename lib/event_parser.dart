@@ -17,6 +17,7 @@ class ParsedEvent {
     this.sessionId,
     required this.entry,
     this.permission,
+    this.permissionId,
     this.model,
   });
 
@@ -24,7 +25,43 @@ class ParsedEvent {
   final String? sessionId;
   final LogEntry entry;
   final PermissionRequest? permission;
+
+  /// `per_...` id of the request — set for `permission.asked` and
+  /// `permission.replied` (from `requestID`), so answered requests can be
+  /// dropped from the pending list.
+  final String? permissionId;
   final ModelRef? model;
+}
+
+/// Extracts the model a message used, for composer inheritance.
+///
+/// Assistant messages carry `providerID`/`modelID` at the top level; user
+/// messages nest them under `model`.
+ModelRef? modelFromMessage(Map<String, dynamic> message) {
+  final role = message['role']?.toString();
+  if (role == 'assistant') {
+    final providerID = message['providerID'];
+    final modelID = message['modelID'];
+    if (providerID is String &&
+        modelID is String &&
+        providerID.isNotEmpty &&
+        modelID.isNotEmpty) {
+      return ModelRef(providerID: providerID, modelID: modelID);
+    }
+    return null;
+  }
+  final m = message['model'];
+  if (m is Map<String, dynamic>) {
+    final providerID = m['providerID'];
+    final modelID = m['modelID'];
+    if (providerID is String &&
+        modelID is String &&
+        providerID.isNotEmpty &&
+        modelID.isNotEmpty) {
+      return ModelRef(providerID: providerID, modelID: modelID);
+    }
+  }
+  return null;
 }
 
 LogEntry _raw(Map<String, dynamic> raw) => LogEntry(
@@ -106,6 +143,7 @@ ParsedEvent parseEvent(Map<String, dynamic> raw) {
         return ParsedEvent(
           type: type,
           sessionId: sessionId,
+          permissionId: props['requestID']?.toString(),
           entry: LogEntry(
             kind: LogKind.system,
             time: DateTime.now(),
@@ -294,25 +332,8 @@ ParsedEvent _parseMessageUpdated(
 
   final role = info['role']?.toString() ?? 'message';
 
-  // Model inheritance: assistant messages carry providerID/modelID at the
-  // top level; user messages nest them under `model`.
-  ModelRef? model;
-  if (role == 'assistant') {
-    final providerID = info['providerID'];
-    final modelID = info['modelID'];
-    if (providerID is String && modelID is String && providerID.isNotEmpty) {
-      model = ModelRef(providerID: providerID, modelID: modelID);
-    }
-  } else {
-    final m = info['model'];
-    if (m is Map<String, dynamic>) {
-      final providerID = m['providerID'];
-      final modelID = m['modelID'];
-      if (providerID is String && modelID is String) {
-        model = ModelRef(providerID: providerID, modelID: modelID);
-      }
-    }
-  }
+  // Model inheritance: see modelFromMessage.
+  final model = modelFromMessage(info);
 
   final err = info['error'];
   return ParsedEvent(
@@ -367,6 +388,7 @@ ParsedEvent _parsePermissionAsked(
     type: type,
     sessionId: sessionId,
     permission: request,
+    permissionId: id,
     entry: LogEntry(
       kind: LogKind.permission,
       time: request.time,

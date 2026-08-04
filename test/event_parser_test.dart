@@ -134,5 +134,28 @@ void main() {
       expect(ev.entry.kind, LogKind.error);
       expect(ev.entry.text, contains('bad key'));
     });
+
+    test('permission.replied → permissionId for pending-list cleanup', () {
+      final ev = parseEvent(envelope('permission.replied', {
+        'sessionID': 'ses_abc',
+        'requestID': 'per_9',
+        'reply': 'once',
+      }));
+
+      expect(ev.permissionId, 'per_9');
+      expect(ev.entry.kind, LogKind.system);
+      expect(ev.entry.text, contains('once'));
+    });
+
+    test('modelFromMessage: user message nests model under `model`', () {
+      final model = modelFromMessage(const {
+        'role': 'user',
+        'model': {'providerID': 'openai', 'modelID': 'gpt-4o'},
+      });
+
+      expect(model, isNotNull);
+      expect(model!.providerID, 'openai');
+      expect(model.modelID, 'gpt-4o');
+    });
   });
 }
