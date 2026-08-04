@@ -32,8 +32,11 @@ class LogEntry {
     required this.kind,
     required this.time,
     this.sessionID,
+    this.messageID,
+    this.role,
     this.text = '',
     this.tool,
+    this.toolCallID,
     this.toolState,
     this.toolTitle,
     this.toolOutput,
@@ -43,8 +46,17 @@ class LogEntry {
   final LogKind kind;
   final DateTime time;
   final String? sessionID;
+
+  /// Owning message id (`msg_…`) — used to group log entries into message
+  /// blocks, mirroring the desktop app's chat layout.
+  final String? messageID;
+
+  /// `user` | `assistant` | `system` — set on message-boundary entries.
+  final String? role;
+
   final String text;
   final String? tool;
+  final String? toolCallID;
   final String? toolState;
   final String? toolTitle;
   final String? toolOutput;
@@ -100,6 +112,36 @@ class FileDiff {
 
   /// `added` | `deleted` | `modified`.
   final String status;
+}
+
+class ModelEntry {
+  const ModelEntry({
+    required this.providerID,
+    required this.providerName,
+    required this.modelID,
+    this.name,
+    this.status,
+    this.variants = const [],
+  });
+
+  final String providerID;
+  final String providerName;
+  final String modelID;
+  final String? name;
+  final String? status;
+  final List<String> variants;
+
+  String get displayName => (name != null && name!.isNotEmpty) ? name! : modelID;
+
+  String get key => '$providerID/$modelID';
+}
+
+class AgentInfo {
+  const AgentInfo({required this.name, this.mode, this.description});
+
+  final String name;
+  final String? mode;
+  final String? description;
 }
 
 class SessionSummary {

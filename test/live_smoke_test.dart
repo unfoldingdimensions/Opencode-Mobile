@@ -37,6 +37,15 @@ void main() {
 
       final config = await client.getConfig();
       expect(config, isA<Map<String, dynamic>>());
+
+      final providers = await client.getProviders();
+      expect(providers, isNotEmpty, reason: 'model catalog is populated');
+      final firstProvider = providers.first;
+      expect(firstProvider['models'], isA<Map<String, dynamic>>());
+
+      final agents = await client.getAgents();
+      expect(agents, isNotEmpty, reason: 'agent catalog is populated');
+      expect(agents.first['name'], isA<String>());
     } catch (e) {
       markTestSkipped('server unreachable at $base: $e');
     } finally {

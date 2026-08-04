@@ -124,6 +124,8 @@ class ConnectionController extends Notifier<ConnectionState> {
     _sub = client.eventStream().listen(_onEvent, onError: (_) {}, onDone: () {});
     state = ConnectionState(phase: ConnectionPhase.connected, baseUrl: url, client: client);
     unawaited(NotificationService.instance.startKeepalive());
+    ref.invalidate(modelCatalogProvider);
+    ref.invalidate(agentCatalogProvider);
     _selectNewest();
   }
 
@@ -256,6 +258,7 @@ class ConnectionController extends Notifier<ConnectionState> {
 
   List<LogEntry> _entriesFromMessage(Map<String, dynamic> message) {
     final sessionID = message['sessionID'] as String?;
+    final messageID = message['id']?.toString();
     final role = message['role']?.toString() ?? 'message';
     final out = <LogEntry>[];
     if (message['error'] != null) {
@@ -263,6 +266,8 @@ class ConnectionController extends Notifier<ConnectionState> {
         kind: LogKind.error,
         time: DateTime.now(),
         sessionID: sessionID,
+        messageID: messageID,
+        role: role,
         text: '$role error: ${message['error']}',
         rawJson: message,
       ));
@@ -272,6 +277,8 @@ class ConnectionController extends Notifier<ConnectionState> {
       kind: LogKind.system,
       time: DateTime.now(),
       sessionID: sessionID,
+      messageID: messageID,
+      role: role,
       text: '─ $role message ─',
       rawJson: message,
     ));
@@ -279,11 +286,14 @@ class ConnectionController extends Notifier<ConnectionState> {
     if (parts is List) {
       for (final p in parts.whereType<Map<String, dynamic>>()) {
         final partType = p['type'];
+        final partMessageID = p['messageID']?.toString() ?? messageID;
         if (partType == 'text' && p['text'] is String) {
           out.add(LogEntry(
             kind: LogKind.text,
             time: DateTime.now(),
             sessionID: sessionID,
+            messageID: partMessageID,
+            role: role,
             text: p['text'] as String,
             rawJson: p,
           ));
@@ -292,6 +302,8 @@ class ConnectionController extends Notifier<ConnectionState> {
             kind: LogKind.reasoning,
             time: DateTime.now(),
             sessionID: sessionID,
+            messageID: partMessageID,
+            role: role,
             text: p['text'] as String,
             rawJson: p,
           ));
@@ -304,8 +316,11 @@ class ConnectionController extends Notifier<ConnectionState> {
             kind: LogKind.tool,
             time: DateTime.now(),
             sessionID: sessionID,
+            messageID: partMessageID,
+            role: role,
             text: 'tool: ${p['tool'] ?? '?'} ($status)${title == null || title.isEmpty ? '' : ' — $title'}',
             tool: p['tool']?.toString(),
+            toolCallID: p['callID']?.toString(),
             toolState: status,
             toolTitle: title,
             toolOutput: stateMap['output']?.toString(),
@@ -320,6 +335,8 @@ class ConnectionController extends Notifier<ConnectionState> {
             kind: LogKind.system,
             time: DateTime.now(),
             sessionID: sessionID,
+            messageID: partMessageID,
+            role: role,
             text: '[part: $partType]',
             rawJson: p,
           ));
@@ -337,7 +354,15 @@ class ConnectionController extends Notifier<ConnectionState> {
     if (client == null || sessionId == null) return false;
     var model = ref.read(composerModelProvider);
     model ??= await _modelFromConfig(client);
-    await client.sendPrompt(sessionId, model: model, text: text);
+    final agent = ref.read(composerAgentProvider);
+    final variant = ref.read(composerVariantProvider);
+    await client.sendPrompt(
+      sessionId,
+      model: model,
+      agent: agent,
+      variant: variant,
+      text: text,
+    );
     return true;
   }
 
@@ -558,9 +583,92 @@ class ComposerModelNotifier extends Notifier<ModelRef?> {
   ModelRef? build() => null;
 
   void set(ModelRef model) => state = model;
+
+  void clear() => state = null;
 }
 
 /// Last model seen in the selected session's messages — the phone inherits
 /// whatever the desktop is using, no model picker needed.
 final composerModelProvider =
     NotifierProvider<ComposerModelNotifier, ModelRef?>(ComposerModelNotifier.new);
+
+class ComposerAgentNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void set(String? agent) => state = agent;
+}
+
+/// Selected agent (build/plan/…); null = server default.
+final composerAgentProvider =
+    NotifierProvider<ComposerAgentNotifier, String?>(ComposerAgentNotifier.new);
+
+class ComposerVariantNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void set(String? variant) => state = variant;
+}
+
+/// Selected reasoning effort (model variant); null = model default.
+final composerVariantProvider =
+    NotifierProvider<ComposerVariantNotifier, String?>(ComposerVariantNotifier.new);
+
+// --------------------------------------------------------------- catalogs
+
+class ModelCatalogNotifier extends AsyncNotifier<List<ModelEntry>> {
+  @override
+  Future<List<ModelEntry>> build() async {
+    final client = ref.read(connectionProvider).client;
+    if (client == null) return const [];
+    final providers = await client.getProviders();
+    final entries = <ModelEntry>[];
+    for (final provider in providers) {
+      final providerID = provider['id']?.toString() ?? '';
+      final providerName = provider['name']?.toString() ?? providerID;
+      final models = provider['models'];
+      if (models is Map<String, dynamic>) {
+        for (final model in models.values) {
+          if (model is! Map<String, dynamic>) continue;
+          final modelID = model['id']?.toString() ?? '';
+          if (modelID.isEmpty) continue;
+          final variantsRaw = model['variants'];
+          entries.add(ModelEntry(
+            providerID: providerID,
+            providerName: providerName,
+            modelID: modelID,
+            name: model['name']?.toString(),
+            status: model['status']?.toString(),
+            variants: variantsRaw is Map<String, dynamic>
+                ? variantsRaw.keys.toList(growable: false)
+                : const [],
+          ));
+        }
+      }
+    }
+    return entries;
+  }
+}
+
+final modelCatalogProvider =
+    AsyncNotifierProvider<ModelCatalogNotifier, List<ModelEntry>>(ModelCatalogNotifier.new);
+
+class AgentCatalogNotifier extends AsyncNotifier<List<AgentInfo>> {
+  @override
+  Future<List<AgentInfo>> build() async {
+    final client = ref.read(connectionProvider).client;
+    if (client == null) return const [];
+    final agents = await client.getAgents();
+    return agents
+        .map((a) => AgentInfo(
+              name: a['name']?.toString() ?? '',
+              mode: a['mode']?.toString(),
+              description: a['description']?.toString(),
+            ))
+        .where((a) => a.name.isNotEmpty)
+        .toList(growable: false);
+  }
+}
+
+final agentCatalogProvider =
+    AsyncNotifierProvider<AgentCatalogNotifier, List<AgentInfo>>(AgentCatalogNotifier.new);

@@ -128,6 +128,7 @@ ParsedEvent parseEvent(Map<String, dynamic> raw) {
             kind: LogKind.system,
             time: _timeOf(props),
             sessionID: sessionId,
+            messageID: props['messageID']?.toString(),
             text: 'part retracted (${props['messageID'] ?? '?'}/${props['partID'] ?? '?'})',
             rawJson: props,
           ),
@@ -240,10 +241,12 @@ ParsedEvent _parsePartUpdated(
 
   final partType = part['type'];
   final time = _timeOf(props);
+  final messageID = part['messageID']?.toString();
   final common = LogEntry(
     kind: LogKind.raw,
     time: time,
     sessionID: sessionId,
+    messageID: messageID,
     rawJson: part,
   );
 
@@ -260,6 +263,7 @@ ParsedEvent _parsePartUpdated(
           kind: LogKind.text,
           time: time,
           sessionID: sessionId,
+          messageID: messageID,
           text: text,
           rawJson: part,
         ),
@@ -274,6 +278,7 @@ ParsedEvent _parsePartUpdated(
           kind: LogKind.reasoning,
           time: time,
           sessionID: sessionId,
+          messageID: messageID,
           text: text is String ? text : _short(part['text'] ?? '', 200),
           rawJson: part,
         ),
@@ -296,8 +301,10 @@ ParsedEvent _parsePartUpdated(
           kind: LogKind.tool,
           time: time,
           sessionID: sessionId,
+          messageID: messageID,
           text: text,
           tool: tool,
+          toolCallID: part['callID']?.toString(),
           toolState: status,
           toolTitle: title,
           toolOutput: output?.toString(),
@@ -362,6 +369,8 @@ ParsedEvent _parseMessageUpdated(
             kind: LogKind.system,
             time: _timeOf(props),
             sessionID: sessionId,
+            messageID: info['id']?.toString(),
+            role: role,
             text: '─ $role message ─',
             rawJson: info,
           )
@@ -369,6 +378,8 @@ ParsedEvent _parseMessageUpdated(
             kind: LogKind.error,
             time: _timeOf(props),
             sessionID: sessionId,
+            messageID: info['id']?.toString(),
+            role: role,
             text: 'assistant error: ${_short(err)}',
             rawJson: info,
           ),

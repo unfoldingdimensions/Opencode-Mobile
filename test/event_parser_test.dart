@@ -24,6 +24,7 @@ void main() {
       expect(ev.entry.kind, LogKind.text);
       expect(ev.entry.text, 'Hello from the agent');
       expect(ev.entry.sessionID, 'ses_abc');
+      expect(ev.entry.messageID, 'msg_1');
       expect(ev.sessionId, 'ses_abc');
     });
 
@@ -70,6 +71,7 @@ void main() {
 
       expect(ev.entry.kind, LogKind.tool);
       expect(ev.entry.tool, 'bash');
+      expect(ev.entry.toolCallID, 'call_1');
       expect(ev.entry.toolState, 'completed');
       expect(ev.entry.toolOutput, 'dist\nlib');
     });

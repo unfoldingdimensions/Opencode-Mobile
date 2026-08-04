@@ -122,6 +122,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               icon: const Icon(Icons.dynamic_feed_outlined),
               tooltip: 'Sessions',
             ),
+            IconButton(
+              onPressed: () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                useSafeArea: true,
+                builder: (_) => const ComposerSettingsSheet(),
+              ),
+              icon: const Icon(Icons.tune),
+              tooltip: 'Model, agent and effort',
+            ),
           ],
           bottom: const TabBar(
             tabs: [
@@ -226,6 +236,8 @@ class LogTab extends ConsumerStatefulWidget {
 class _LogTabState extends ConsumerState<LogTab> {
   final _scroll = ScrollController();
   bool _stickToBottom = true;
+  bool _allCollapsed = false;
+  final _collapsedKeys = <String>{};
 
   @override
   void dispose() {
@@ -252,20 +264,116 @@ class _LogTabState extends ConsumerState<LogTab> {
         message: 'No output yet.\nSend a prompt or start a task on the desktop.',
       );
     }
-    return NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        if (notification.metrics.maxScrollExtent > 0) {
-          _stickToBottom =
-              notification.metrics.pixels >= notification.metrics.maxScrollExtent - 32;
-        }
-        return false;
-      },
-      child: ListView.builder(
-        controller: _scroll,
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: entries.length,
-        itemBuilder: (_, index) => LogTile(entry: entries[index]),
-      ),
+
+    final groups = buildLogGroups(entries);
+    return Column(
+      children: [
+        _LogToolbar(
+          groupCount: groups.length,
+          onCollapseAll: () => setState(() {
+            _allCollapsed = true;
+            _collapsedKeys.clear();
+          }),
+          onExpandAll: () => setState(() {
+            _allCollapsed = false;
+            _collapsedKeys.clear();
+          }),
+        ),
+        Expanded(
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              final atBottom = notification.metrics.maxScrollExtent <= 0 ||
+                  notification.metrics.pixels >=
+                      notification.metrics.maxScrollExtent - 32;
+              if (atBottom != _stickToBottom) {
+                setState(() => _stickToBottom = atBottom);
+              }
+              return false;
+            },
+            child: Stack(
+              children: [
+                ListView.builder(
+                  controller: _scroll,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: groups.length,
+                  itemBuilder: (_, index) {
+                    final group = groups[index];
+                    return MessageGroup(
+                      group: group,
+                      collapsed: _allCollapsed || _collapsedKeys.contains(group.key),
+                      onToggle: () => setState(() {
+                        if (!_collapsedKeys.remove(group.key)) {
+                          _collapsedKeys.add(group.key);
+                        }
+                      }),
+                    );
+                  },
+                ),
+                if (!_stickToBottom)
+                  Positioned(
+                    right: 12,
+                    bottom: 12,
+                    child: FloatingActionButton.small(
+                      heroTag: 'jump-bottom',
+                      onPressed: () {
+                        _scroll.animateTo(
+                          _scroll.position.maxScrollExtent,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOut,
+                        );
+                      },
+                      child: const Icon(Icons.arrow_downward),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LogToolbar extends StatelessWidget {
+  const _LogToolbar({
+    required this.groupCount,
+    required this.onCollapseAll,
+    required this.onExpandAll,
+  });
+
+  final int groupCount;
+  final VoidCallback onCollapseAll;
+  final VoidCallback onExpandAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        IconButton(
+          onPressed: onCollapseAll,
+          icon: const Icon(Icons.unfold_less),
+          tooltip: 'Collapse all',
+          visualDensity: VisualDensity.compact,
+        ),
+        IconButton(
+          onPressed: onExpandAll,
+          icon: const Icon(Icons.unfold_more),
+          tooltip: 'Expand all',
+          visualDensity: VisualDensity.compact,
+        ),
+        const Spacer(),
+        Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: Text(
+            '$groupCount message${groupCount == 1 ? '' : 's'}',
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ),
+      ],
     );
   }
 }

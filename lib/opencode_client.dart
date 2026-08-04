@@ -106,20 +106,42 @@ class OpenCodeClient {
   /// `POST /session/:id/prompt_async` — send a prompt. Async: the response
   /// arrives over the SSE stream, not here.
   ///
-  /// `model` is optional; when omitted the server falls back to its default.
+  /// `model`, `agent` and `variant` are optional; when omitted the server
+  /// falls back to its defaults.
   Future<Map<String, dynamic>> sendPrompt(
     String sessionId, {
     ModelRef? model,
+    String? agent,
+    String? variant,
     required String text,
   }) async {
     final value = await _post('/session/$sessionId/prompt_async', {
       if (model != null)
         'model': {'providerID': model.providerID, 'modelID': model.modelID},
+      'agent': ?agent,
+      'variant': ?variant,
       'parts': [
         {'type': 'text', 'text': text},
       ],
     });
     return value is Map<String, dynamic> ? value : const <String, dynamic>{};
+  }
+
+  /// `GET /provider` — model catalog: `{all: [{id, name, models: {…}}]}`.
+  Future<List<Map<String, dynamic>>> getProviders() async {
+    final value = await _get('/provider');
+    if (value is Map<String, dynamic>) {
+      final all = value['all'];
+      if (all is List) {
+        return all.whereType<Map<String, dynamic>>().toList(growable: false);
+      }
+    }
+    return const [];
+  }
+
+  /// `GET /agent` — available agents (build, plan, explore, …).
+  Future<List<Map<String, dynamic>>> getAgents() async {
+    return _asListOfMaps(await _get('/agent'));
   }
 
   /// `POST /session/:id/abort` — stop the running agent.
