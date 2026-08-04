@@ -35,6 +35,7 @@ class LogEntry {
     this.text = '',
     this.tool,
     this.toolState,
+    this.toolTitle,
     this.toolOutput,
     this.rawJson,
   });
@@ -45,6 +46,7 @@ class LogEntry {
   final String text;
   final String? tool;
   final String? toolState;
+  final String? toolTitle;
   final String? toolOutput;
 
   /// The original payload for raw entries (and tool parts, for expansion).

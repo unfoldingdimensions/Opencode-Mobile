@@ -282,6 +282,7 @@ class ConnectionController extends Notifier<ConnectionState> {
             text: 'tool: ${p['tool'] ?? '?'} ($status)${title == null || title.isEmpty ? '' : ' — $title'}',
             tool: p['tool']?.toString(),
             toolState: status,
+            toolTitle: title,
             toolOutput: stateMap['output']?.toString(),
             rawJson: p,
           ));
@@ -487,9 +488,11 @@ final busyForSelectedProvider = Provider<bool>((ref) {
 
 class DiffsNotifier extends AsyncNotifier<List<FileDiff>> {
   @override
-  Future<List<FileDiff>> build() async {
-    final client = ref.watch(connectionProvider.select((s) => s.client));
-    final sessionId = ref.watch(selectedSessionIdProvider);
+  Future<List<FileDiff>> build() => _fetch();
+
+  Future<List<FileDiff>> _fetch() async {
+    final client = ref.read(connectionProvider).client;
+    final sessionId = ref.read(selectedSessionIdProvider);
     if (client == null || sessionId == null) return const [];
     final raw = await client.getDiff(sessionId);
     return raw
@@ -501,6 +504,16 @@ class DiffsNotifier extends AsyncNotifier<List<FileDiff>> {
               status: d['status']?.toString() ?? 'modified',
             ))
         .toList(growable: false);
+  }
+
+  /// Pull-to-refresh: refetch without waiting for an invalidation cycle.
+  Future<void> refresh() async {
+    try {
+      final next = await _fetch();
+      if (ref.mounted) state = AsyncData(next);
+    } catch (e, st) {
+      if (ref.mounted) state = AsyncError(e, st);
+    }
   }
 }
 

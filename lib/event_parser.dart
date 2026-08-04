@@ -299,6 +299,7 @@ ParsedEvent _parsePartUpdated(
           text: text,
           tool: tool,
           toolState: status,
+          toolTitle: title,
           toolOutput: output?.toString(),
           rawJson: part,
         ),

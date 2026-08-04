@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'connect_screen.dart';
+import 'dashboard_screen.dart';
 import 'providers.dart';
 import 'theme.dart';
 
@@ -48,7 +49,7 @@ class HomeGate extends ConsumerWidget {
     return switch (connection.phase) {
       ConnectionPhase.disconnected => const ConnectScreen(),
       ConnectionPhase.connecting => _ConnectingSplash(url: connection.baseUrl),
-      ConnectionPhase.connected => const _DashboardPlaceholder(),
+      ConnectionPhase.connected => const DashboardScreen(),
       ConnectionPhase.error => ConnectScreen(
           initialUrl: connection.baseUrl ?? '',
           initialError: connection.error,
@@ -81,33 +82,6 @@ class _ConnectingSplash extends StatelessWidget {
                 style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DashboardPlaceholder extends StatelessWidget {
-  const _DashboardPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.dashboard_outlined, size: 64, color: scheme.primary),
-            const SizedBox(height: 16),
-            Text('Connected', style: textTheme.headlineMedium),
-            const SizedBox(height: 8),
-            Text(
-              'Dashboard lands in Phase 4',
-              style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
-            ),
           ],
         ),
       ),
