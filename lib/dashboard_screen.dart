@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'notifications.dart';
 import 'providers.dart';
 import 'widgets.dart';
 
@@ -14,6 +15,42 @@ class DashboardScreen extends ConsumerStatefulWidget {
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   String? _shownPermissionId;
+
+  @override
+  void initState() {
+    super.initState();
+    NotificationService.instance.permissionTap.addListener(_onPermissionTap);
+    final tap = NotificationService.instance.takePermissionTap();
+    if (tap != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openPermissionFromTap(tap));
+    }
+  }
+
+  @override
+  void dispose() {
+    NotificationService.instance.permissionTap.removeListener(_onPermissionTap);
+    super.dispose();
+  }
+
+  void _onPermissionTap() {
+    final id = NotificationService.instance.takePermissionTap();
+    if (id != null && mounted) _openPermissionFromTap(id);
+  }
+
+  void _openPermissionFromTap(String id) {
+    if (!mounted) return;
+    final request = ref
+        .read(pendingPermissionsProvider)
+        .where((p) => p.id == id)
+        .firstOrNull;
+    if (request == null) return;
+    _shownPermissionId = id;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => PermissionSheet(request: request),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

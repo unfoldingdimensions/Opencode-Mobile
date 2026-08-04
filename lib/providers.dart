@@ -8,11 +8,13 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'event_parser.dart';
 import 'models.dart';
+import 'notifications.dart';
 import 'opencode_client.dart';
 
 const _kBaseUrlPrefsKey = 'baseUrl';
@@ -121,10 +123,12 @@ class ConnectionController extends Notifier<ConnectionState> {
     unawaited(ref.read(baseUrlProvider.notifier).set(url));
     _sub = client.eventStream().listen(_onEvent, onError: (_) {}, onDone: () {});
     state = ConnectionState(phase: ConnectionPhase.connected, baseUrl: url, client: client);
+    unawaited(NotificationService.instance.startKeepalive());
     _selectNewest();
   }
 
   void disconnect() {
+    unawaited(NotificationService.instance.stopKeepalive());
     _teardown();
     state = const ConnectionState(phase: ConnectionPhase.disconnected);
   }
@@ -154,13 +158,20 @@ class ConnectionController extends Notifier<ConnectionState> {
     final parsed = parseEvent(raw);
     ref.read(logEntriesProvider.notifier).append(parsed.entry);
 
+    final inBackground =
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed;
+
     final permission = parsed.permission;
     if (permission != null) {
       ref.read(pendingPermissionsProvider.notifier).add(permission);
+      if (inBackground) {
+        unawaited(NotificationService.instance.showPermission(permission));
+      }
     }
     final permissionId = parsed.permissionId;
     if (permissionId != null) {
       ref.read(pendingPermissionsProvider.notifier).remove(permissionId);
+      unawaited(NotificationService.instance.cancelPermission());
     }
     final model = parsed.model;
     if (model != null) {
@@ -181,10 +192,16 @@ class ConnectionController extends Notifier<ConnectionState> {
             ref.invalidate(diffsProvider);
           }
         }
+        if (inBackground) {
+          unawaited(NotificationService.instance.showIdle('The agent finished its task.'));
+        }
         ref.invalidate(sessionListProvider);
       case 'session.error':
         if (sessionId != null) {
           ref.read(sessionBusyProvider.notifier).setBusy(sessionId, false);
+        }
+        if (inBackground) {
+          unawaited(NotificationService.instance.showError(parsed.entry.text));
         }
       case 'server.connected':
         ref.invalidate(sessionListProvider);

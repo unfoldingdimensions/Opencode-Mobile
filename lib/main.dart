@@ -5,12 +5,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'connect_screen.dart';
 import 'dashboard_screen.dart';
+import 'notifications.dart';
 import 'providers.dart';
 import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   GoogleFonts.config.allowRuntimeFetching = true;
+  NotificationService.instance.initForegroundTask();
+  await NotificationService.instance.init();
   final prefs = await SharedPreferences.getInstance();
   final savedUrl = prefs.getString('baseUrl') ?? '';
   runApp(ProviderScope(
