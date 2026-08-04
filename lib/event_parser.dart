@@ -306,8 +306,24 @@ ParsedEvent _parsePartUpdated(
       );
 
     default:
-      // Other known part kinds (snapshot, patch, file, stepstart, …) are not
-      // rendered specially; keep a compact marker plus the raw payload.
+      // Lifecycle parts are pure noise; keep them silent. Other known part
+      // kinds (patch, file, agent, …) are not rendered specially: keep a
+      // compact marker plus the raw payload.
+      if (partType == 'step-start' ||
+          partType == 'step-finish' ||
+          partType == 'snapshot') {
+        return ParsedEvent(
+          type: type,
+          sessionId: sessionId,
+          entry: LogEntry(
+            kind: LogKind.system,
+            time: time,
+            sessionID: sessionId,
+            text: '',
+            rawJson: part,
+          ),
+        );
+      }
       return ParsedEvent(
         type: type,
         sessionId: sessionId,

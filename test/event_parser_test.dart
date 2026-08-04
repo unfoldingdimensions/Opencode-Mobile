@@ -157,5 +157,16 @@ void main() {
       expect(model!.providerID, 'openai');
       expect(model.modelID, 'gpt-4o');
     });
+
+    test('step-start part is lifecycle noise (empty system entry)', () {
+      final ev = parseEvent(envelope('message.part.updated', {
+        'sessionID': 'ses_abc',
+        'time': 1700000000000,
+        'part': {'id': 'prt_9', 'type': 'step-start'},
+      }));
+
+      expect(ev.entry.kind, LogKind.system);
+      expect(ev.entry.text, isEmpty);
+    });
   });
 }

@@ -287,6 +287,14 @@ class ConnectionController extends Notifier<ConnectionState> {
             text: p['text'] as String,
             rawJson: p,
           ));
+        } else if (partType == 'reasoning' && p['text'] is String) {
+          out.add(LogEntry(
+            kind: LogKind.reasoning,
+            time: DateTime.now(),
+            sessionID: sessionID,
+            text: p['text'] as String,
+            rawJson: p,
+          ));
         } else if (partType == 'tool') {
           final state = p['state'];
           final stateMap = state is Map<String, dynamic> ? state : const <String, dynamic>{};
@@ -303,6 +311,10 @@ class ConnectionController extends Notifier<ConnectionState> {
             toolOutput: stateMap['output']?.toString(),
             rawJson: p,
           ));
+        } else if (partType == 'step-start' ||
+            partType == 'step-finish' ||
+            partType == 'snapshot') {
+          // Lifecycle noise — skip in history replay too.
         } else {
           out.add(LogEntry(
             kind: LogKind.system,
@@ -442,8 +454,10 @@ class LogEntriesNotifier extends Notifier<List<LogEntry>> {
   }
 
   /// Appends entries for the selected session; system-wide entries (no
-  /// sessionID) always pass through.
+  /// sessionID) always pass through. Empty system entries (lifecycle noise)
+  /// are dropped.
   void append(LogEntry entry) {
+    if (entry.kind == LogKind.system && entry.text.isEmpty) return;
     final selected = ref.read(selectedSessionIdProvider);
     if (entry.sessionID != null && entry.sessionID != selected) return;
     final next = [...state, entry];
